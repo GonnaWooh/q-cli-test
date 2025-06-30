@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Curling Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #87CEEB, #E0F6FF);
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        .game-container {
+            text-align: center;
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        canvas {
+            border: 3px solid #2c3e50;
+            border-radius: 10px;
+            background: linear-gradient(to bottom, #E8F4FD 0%, #B8E0FF 100%);
+            cursor: crosshair;
+        }
+        
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 15px 0;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        .score {
+            color: #2c3e50;
+        }
+        
+        .power-meter {
+            margin: 10px 0;
+        }
+        
+        .power-bar {
+            width: 300px;
+            height: 20px;
+            background: #ddd;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 0 auto;
+            border: 2px solid #2c3e50;
+        }
+        
+        .power-fill {
+            height: 100%;
+            background: linear-gradient(to right, #27ae60, #f1c40f, #e74c3c);
+            width: 0%;
+            transition: width 0.1s;
+        }
+        
+        .controls {
+            margin-top: 15px;
+            color: #555;
+            font-size: 14px;
+        }
+        
+        .turn-indicator {
+            font-size: 20px;
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+        }
+        
+        .player1-turn {
+            background: #3498db;
+            color: white;
+        }
+        
+        .player2-turn {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .game-over {
+            font-size: 24px;
+            color: #27ae60;
+            margin: 15px 0;
+            font-weight: bold;
+        }
+        
+        .end-result {
+            background: #f8f9fa;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        .end-result.player1-scored {
+            background: #d4edda;
+            border-color: #3498db;
+            color: #2c3e50;
+        }
+        
+        .end-result.player2-scored {
+            background: #f8d7da;
+            border-color: #e74c3c;
+            color: #2c3e50;
+        }
+        
+        .waiting-message {
+            font-size: 16px;
+            color: #666;
+            margin: 10px 0;
+            font-style: italic;
+        }
+        
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        
+        button:hover {
+            background: #2980b9;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>🥌 Curling Game</h1>
+        
+        <div class="game-info">
+            <div class="score">Player 1 (Blue): <span id="player1Score">0</span></div>
+            <div class="score">End: <span id="currentEnd">1</span> / <span id="maxEnds">6</span></div>
+            <div class="score">Player 2 (Red): <span id="player2Score">0</span></div>
+        </div>
+        
+        <div id="turnIndicator" class="turn-indicator player1-turn">
+            Player 1's Turn - Stone <span id="stoneNumber">1</span>/8 - Click and drag to aim and set power
+        </div>
+        
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <div class="power-meter">
+            <div>Power: <span id="powerValue">0</span>%</div>
+            <div class="power-bar">
+                <div id="powerFill" class="power-fill"></div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <p><strong>How to play:</strong></p>
+            <p>• Click and drag from the throwing area to aim and set power</p>
+            <p>• Release to throw your stone</p>
+            <p>• 각 플레이어가 번갈아가며 돌을 던집니다 (총 8개씩)</p>
+            <p>• 타겟 중심에 가장 가까운 돌의 팀이 점수를 얻습니다</p>
+            <p>• 상대방보다 가까운 모든 돌이 점수가 됩니다</p>
+            <p>• 6엔드를 진행하여 총점이 높은 팀이 승리합니다</p>
+        </div>
+        
+        <div id="gameOver" class="game-over" style="display: none;"></div>
+        <div id="endResult" class="end-result" style="display: none;"></div>
+        <div id="waitingMessage" class="waiting-message" style="display: none;">돌들이 멈출 때까지 기다리는 중...</div>
+        <button id="newGameBtn" onclick="startNewGame()" style="display: none;">New Game</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game state
+        let currentPlayer = 1;
+        let player1Score = 0;
+        let player2Score = 0;
+        let currentEnd = 1;
+        let stonesThrown = 0;
+        let maxEnds = 6; // 빠른 게임을 위해 6엔드
+        let gameOver = false;
+        let stonesPerPlayer = 8; // 각 플레이어당 8개의 돌
+        let endInProgress = false;
+        let waitingForStones = false;
+        
+        // Sound effects (Web Audio API를 사용한 간단한 사운드)
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playSound(frequency, duration, type = 'sine') {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = frequency;
+            oscillator.type = type;
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + duration);
+        }
+        
+        function playThrowSound() {
+            playSound(200, 0.3, 'sine');
+        }
+        
+        function playCollisionSound() {
+            playSound(400, 0.2, 'square');
+        }
+        
+        function playScoreSound() {
+            // 점수 획득 시 멜로디
+            setTimeout(() => playSound(523, 0.2), 0);    // C
+            setTimeout(() => playSound(659, 0.2), 200);  // E
+            setTimeout(() => playSound(784, 0.3), 400);  // G
+        }
+        
+        function playEndSound() {
+            // 게임 종료 시 팡파레
+            setTimeout(() => playSound(523, 0.3), 0);
+            setTimeout(() => playSound(659, 0.3), 300);
+            setTimeout(() => playSound(784, 0.3), 600);
+            setTimeout(() => playSound(1047, 0.5), 900);
+        }
+        
+        // Stones array
+        let stones = [];
+        
+        // Mouse/touch state
+        let isDragging = false;
+        let dragStart = { x: 0, y: 0 };
+        let dragEnd = { x: 0, y: 0 };
+        let power = 0;
+        
+        // Game constants
+        const STONE_RADIUS = 15;
+        const TARGET_CENTER = { x: canvas.width / 2, y: 100 };
+        const TARGET_RADIUS = 80;
+        const THROWING_AREA = { x: canvas.width / 2, y: canvas.height - 50 };
+        const FRICTION = 0.98;
+        const MIN_VELOCITY = 0.1;
+        
+        // Stone class
+        class Stone {
+            constructor(x, y, vx, vy, player) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.player = player;
+                this.radius = STONE_RADIUS;
+                this.moving = true;
+            }
+            
+            update() {
+                if (!this.moving) return;
+                
+                // Apply velocity
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                // Apply friction
+                this.vx *= FRICTION;
+                this.vy *= FRICTION;
+                
+                // Stop if velocity is too low
+                if (Math.abs(this.vx) < MIN_VELOCITY && Math.abs(this.vy) < MIN_VELOCITY) {
+                    this.vx = 0;
+                    this.vy = 0;
+                    this.moving = false;
+                }
+                
+                // Boundary collision
+                if (this.x - this.radius < 0 || this.x + this.radius > canvas.width) {
+                    this.vx *= -0.8;
+                    this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
+                }
+                
+                if (this.y - this.radius < 0 || this.y + this.radius > canvas.height) {
+                    this.vy *= -0.8;
+                    this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+                }
+            }
+            
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                
+                // Stone color based on player
+                if (this.player === 1) {
+                    ctx.fillStyle = '#3498db';
+                    ctx.strokeStyle = '#2980b9';
+                } else {
+                    ctx.fillStyle = '#e74c3c';
+                    ctx.strokeStyle = '#c0392b';
+                }
+                
+                ctx.fill();
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                // Add stone handle/grip
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * 0.4, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.fill();
+                ctx.strokeStyle = '#34495e';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+        
+        // Check collision between stones
+        function checkStoneCollisions() {
+            for (let i = 0; i < stones.length; i++) {
+                for (let j = i + 1; j < stones.length; j++) {
+                    const stone1 = stones[i];
+                    const stone2 = stones[j];
+                    
+                    const dx = stone2.x - stone1.x;
+                    const dy = stone2.y - stone1.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < stone1.radius + stone2.radius) {
+                        // Collision detected - simple elastic collision
+                        const angle = Math.atan2(dy, dx);
+                        const sin = Math.sin(angle);
+                        const cos = Math.cos(angle);
+                        
+                        // Separate stones
+                        const overlap = (stone1.radius + stone2.radius) - distance;
+                        stone1.x -= overlap * 0.5 * cos;
+                        stone1.y -= overlap * 0.5 * sin;
+                        stone2.x += overlap * 0.5 * cos;
+                        stone2.y += overlap * 0.5 * sin;
+                        
+                        // Exchange velocities (simplified)
+                        const tempVx = stone1.vx;
+                        const tempVy = stone1.vy;
+                        stone1.vx = stone2.vx * 0.8;
+                        stone1.vy = stone2.vy * 0.8;
+                        stone2.vx = tempVx * 0.8;
+                        stone2.vy = tempVy * 0.8;
+                        
+                        stone1.moving = true;
+                        stone2.moving = true;
+                        
+                        // Play collision sound
+                        playCollisionSound();
+                    }
+                }
+            }
+        }
+        
+        // Draw game elements
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw ice texture
+            drawIce();
+            
+            // Draw target
+            drawTarget();
+            
+            // Draw throwing area
+            drawThrowingArea();
+            
+            // Draw stones
+            stones.forEach(stone => stone.draw());
+            
+            // Draw aiming line if dragging
+            if (isDragging && !gameOver && !waitingForStones) {
+                drawAimingLine();
+            }
+        }
+        
+        function drawIce() {
+            // Ice surface with subtle pattern
+            const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            gradient.addColorStop(0, 'rgba(200, 230, 255, 0.3)');
+            gradient.addColorStop(1, 'rgba(150, 200, 255, 0.3)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw ice lines
+            ctx.strokeStyle = 'rgba(100, 150, 200, 0.3)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < canvas.width; i += 40) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, canvas.height);
+                ctx.stroke();
+            }
+        }
+        
+        function drawTarget() {
+            // Target circles
+            const circles = [
+                { radius: TARGET_RADIUS, color: '#e74c3c', alpha: 0.3 },
+                { radius: TARGET_RADIUS * 0.75, color: '#f1c40f', alpha: 0.3 },
+                { radius: TARGET_RADIUS * 0.5, color: '#27ae60', alpha: 0.3 },
+                { radius: TARGET_RADIUS * 0.25, color: '#3498db', alpha: 0.5 }
+            ];
+            
+            circles.forEach(circle => {
+                ctx.beginPath();
+                ctx.arc(TARGET_CENTER.x, TARGET_CENTER.y, circle.radius, 0, Math.PI * 2);
+                ctx.fillStyle = circle.color;
+                ctx.globalAlpha = circle.alpha;
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.strokeStyle = circle.color;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+            
+            // Center dot
+            ctx.beginPath();
+            ctx.arc(TARGET_CENTER.x, TARGET_CENTER.y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#2c3e50';
+            ctx.fill();
+        }
+        
+        function drawThrowingArea() {
+            // Throwing line
+            ctx.strokeStyle = '#2c3e50';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, THROWING_AREA.y);
+            ctx.lineTo(canvas.width, THROWING_AREA.y);
+            ctx.stroke();
+            
+            // Throwing position indicator
+            ctx.beginPath();
+            ctx.arc(THROWING_AREA.x, THROWING_AREA.y, 10, 0, Math.PI * 2);
+            ctx.fillStyle = currentPlayer === 1 ? '#3498db' : '#e74c3c';
+            ctx.fill();
+            ctx.strokeStyle = '#2c3e50';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        
+        function drawAimingLine() {
+            ctx.strokeStyle = currentPlayer === 1 ? '#3498db' : '#e74c3c';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([10, 5]);
+            ctx.beginPath();
+            ctx.moveTo(THROWING_AREA.x, THROWING_AREA.y);
+            ctx.lineTo(dragEnd.x, dragEnd.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // Power indicator
+            const distance = Math.sqrt(
+                Math.pow(dragEnd.x - THROWING_AREA.x, 2) + 
+                Math.pow(dragEnd.y - THROWING_AREA.y, 2)
+            );
+            power = Math.min(100, (distance / 200) * 100);
+            
+            document.getElementById('powerValue').textContent = Math.round(power);
+            document.getElementById('powerFill').style.width = power + '%';
+        }
+        
+        // Calculate score for current end
+        function calculateEndScore() {
+            if (stones.length === 0) {
+                return { player1: 0, player2: 0, details: "엔드에 돌이 없습니다." };
+            }
+            
+            // 타겟 영역 내의 돌들만 고려
+            let player1Stones = [];
+            let player2Stones = [];
+            
+            stones.forEach(stone => {
+                const distance = Math.sqrt(
+                    Math.pow(stone.x - TARGET_CENTER.x, 2) + 
+                    Math.pow(stone.y - TARGET_CENTER.y, 2)
+                );
+                
+                if (distance <= TARGET_RADIUS) {
+                    if (stone.player === 1) {
+                        player1Stones.push({ stone, distance });
+                    } else {
+                        player2Stones.push({ stone, distance });
+                    }
+                }
+            });
+            
+            // 거리순으로 정렬
+            player1Stones.sort((a, b) => a.distance - b.distance);
+            player2Stones.sort((a, b) => a.distance - b.distance);
+            
+            // 점수 계산
+            if (player1Stones.length === 0 && player2Stones.length === 0) {
+                return { player1: 0, player2: 0, details: "양 팀 모두 타겟 영역에 돌이 없습니다." };
+            }
+            
+            if (player1Stones.length === 0) {
+                return { 
+                    player1: 0, 
+                    player2: player2Stones.length, 
+                    details: `Player 2가 ${player2Stones.length}점 획득!` 
+                };
+            }
+            
+            if (player2Stones.length === 0) {
+                return { 
+                    player1: player1Stones.length, 
+                    player2: 0, 
+                    details: `Player 1이 ${player1Stones.length}점 획득!` 
+                };
+            }
+            
+            // 가장 가까운 돌 비교
+            const closestPlayer1 = player1Stones[0].distance;
+            const closestPlayer2 = player2Stones[0].distance;
+            
+            if (closestPlayer1 < closestPlayer2) {
+                // Player 1이 가장 가까움 - Player 2의 가장 가까운 돌보다 가까운 Player 1의 돌들이 점수
+                const scoringStones = player1Stones.filter(s => s.distance < closestPlayer2);
+                return { 
+                    player1: scoringStones.length, 
+                    player2: 0, 
+                    details: `Player 1이 ${scoringStones.length}점 획득!` 
+                };
+            } else if (closestPlayer2 < closestPlayer1) {
+                // Player 2가 가장 가까움
+                const scoringStones = player2Stones.filter(s => s.distance < closestPlayer1);
+                return { 
+                    player1: 0, 
+                    player2: scoringStones.length, 
+                    details: `Player 2가 ${scoringStones.length}점 획득!` 
+                };
+            } else {
+                // 동점 - 무득점
+                return { player1: 0, player2: 0, details: "동점으로 무득점입니다." };
+            }
+        }
+        
+        // Event listeners
+        canvas.addEventListener('mousedown', (e) => {
+            if (gameOver || areAnyStoneMoving() || waitingForStones) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Check if click is near throwing area
+            const distance = Math.sqrt(
+                Math.pow(x - THROWING_AREA.x, 2) + 
+                Math.pow(y - THROWING_AREA.y, 2)
+            );
+            
+            if (distance < 50) {
+                isDragging = true;
+                dragStart = { x: THROWING_AREA.x, y: THROWING_AREA.y };
+                dragEnd = { x, y };
+            }
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            dragEnd = {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        });
+        
+        canvas.addEventListener('mouseup', (e) => {
+            if (!isDragging || gameOver || waitingForStones) return;
+            
+            isDragging = false;
+            
+            // Calculate velocity based on drag
+            const dx = dragEnd.x - dragStart.x;
+            const dy = dragEnd.y - dragStart.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance > 10) {
+                const velocity = Math.min(distance / 20, 15);
+                const angle = Math.atan2(dy, dx);
+                
+                // Create new stone
+                const stone = new Stone(
+                    THROWING_AREA.x,
+                    THROWING_AREA.y,
+                    Math.cos(angle) * velocity,
+                    Math.sin(angle) * velocity,
+                    currentPlayer
+                );
+                
+                stones.push(stone);
+                stonesThrown++;
+                
+                // Play throw sound
+                playThrowSound();
+                
+                // 플레이어 교체 (매번 번갈아가며)
+                currentPlayer = currentPlayer === 1 ? 2 : 1;
+                updateTurnIndicator();
+                
+                // 엔드 완료 체크 (총 16개 돌: 각 플레이어 8개씩)
+                if (stonesThrown >= 16) {
+                    waitingForStones = true;
+                    document.getElementById('waitingMessage').style.display = 'block';
+                    document.getElementById('turnIndicator').style.display = 'none';
+                    
+                    // 돌들이 멈출 때까지 기다린 후 엔드 종료
+                    checkEndCompletion();
+                }
+            }
+            
+            power = 0;
+            document.getElementById('powerValue').textContent = '0';
+            document.getElementById('powerFill').style.width = '0%';
+        });
+        
+        function areAnyStoneMoving() {
+            return stones.some(stone => stone.moving);
+        }
+        
+        function checkEndCompletion() {
+            if (!areAnyStoneMoving()) {
+                endCurrentEnd();
+            } else {
+                setTimeout(checkEndCompletion, 500); // 0.5초마다 체크
+            }
+        }
+        
+        function endCurrentEnd() {
+            waitingForStones = false;
+            document.getElementById('waitingMessage').style.display = 'none';
+            
+            const endScore = calculateEndScore();
+            player1Score += endScore.player1;
+            player2Score += endScore.player2;
+            
+            document.getElementById('player1Score').textContent = player1Score;
+            document.getElementById('player2Score').textContent = player2Score;
+            
+            // 엔드 결과 표시
+            const endResultDiv = document.getElementById('endResult');
+            endResultDiv.textContent = `End ${currentEnd}: ${endScore.details}`;
+            endResultDiv.style.display = 'block';
+            
+            if (endScore.player1 > 0) {
+                endResultDiv.className = 'end-result player1-scored';
+            } else if (endScore.player2 > 0) {
+                endResultDiv.className = 'end-result player2-scored';
+            } else {
+                endResultDiv.className = 'end-result';
+            }
+            
+            // 점수 획득 시 사운드
+            if (endScore.player1 > 0 || endScore.player2 > 0) {
+                playScoreSound();
+            }
+            
+            // 점수를 얻은 팀의 반대편이 다음 엔드를 먼저 시작 (해머 규칙)
+            if (endScore.player1 > 0) {
+                currentPlayer = 2; // Player 1이 점수를 얻었으므로 Player 2가 먼저 시작
+            } else if (endScore.player2 > 0) {
+                currentPlayer = 1; // Player 2가 점수를 얻었으므로 Player 1이 먼저 시작
+            }
+            // 무득점이면 현재 플레이어가 계속 먼저 시작
+            
+            currentEnd++;
+            
+            if (currentEnd > maxEnds) {
+                endGame();
+            } else {
+                document.getElementById('currentEnd').textContent = currentEnd;
+                
+                // 2초 후 자동으로 다음 엔드 시작 (돌들 자동 초기화)
+                setTimeout(() => {
+                    startNextEnd();
+                }, 2000);
+            }
+        }
+        
+        function startNextEnd() {
+            // 다음 엔드를 위해 돌들 자동 제거 및 초기화
+            stones = [];
+            stonesThrown = 0;
+            endInProgress = false;
+            
+            document.getElementById('endResult').style.display = 'none';
+            document.getElementById('turnIndicator').style.display = 'block';
+            
+            updateTurnIndicator();
+        }
+        
+        function endGame() {
+            gameOver = true;
+            let winner;
+            let winnerText;
+            
+            if (player1Score > player2Score) {
+                winner = "Player 1 (Blue)";
+                winnerText = `🏆 ${winner} 승리! (${player1Score} - ${player2Score})`;
+            } else if (player2Score > player1Score) {
+                winner = "Player 2 (Red)";
+                winnerText = `🏆 ${winner} 승리! (${player2Score} - ${player1Score})`;
+            } else {
+                winnerText = `🤝 무승부! (${player1Score} - ${player2Score})`;
+            }
+            
+            document.getElementById('gameOver').textContent = winnerText;
+            document.getElementById('gameOver').style.display = 'block';
+            document.getElementById('newGameBtn').style.display = 'inline-block';
+            document.getElementById('turnIndicator').style.display = 'none';
+            document.getElementById('endResult').style.display = 'none';
+            
+            // 게임 종료 사운드
+            playEndSound();
+        }
+        
+        function updateTurnIndicator() {
+            const indicator = document.getElementById('turnIndicator');
+            const stoneNumber = Math.floor(stonesThrown / 2) + 1; // 각 플레이어의 몇 번째 돌인지
+            const playerStoneNumber = Math.floor((stonesThrown + (currentPlayer === 1 ? 0 : 1)) / 2) + 1;
+            
+            document.getElementById('stoneNumber').textContent = playerStoneNumber;
+            
+            if (currentPlayer === 1) {
+                indicator.className = 'turn-indicator player1-turn';
+                indicator.innerHTML = `Player 1's Turn - Stone <span id="stoneNumber">${playerStoneNumber}</span>/8 - Click and drag to aim and set power`;
+            } else {
+                indicator.className = 'turn-indicator player2-turn';
+                indicator.innerHTML = `Player 2's Turn - Stone <span id="stoneNumber">${playerStoneNumber}</span>/8 - Click and drag to aim and set power`;
+            }
+        }
+        
+        function startNewGame() {
+            currentPlayer = 1;
+            player1Score = 0;
+            player2Score = 0;
+            currentEnd = 1;
+            stonesThrown = 0;
+            gameOver = false;
+            endInProgress = false;
+            waitingForStones = false;
+            stones = [];
+            
+            document.getElementById('player1Score').textContent = '0';
+            document.getElementById('player2Score').textContent = '0';
+            document.getElementById('currentEnd').textContent = '1';
+            document.getElementById('maxEnds').textContent = maxEnds;
+            document.getElementById('gameOver').style.display = 'none';
+            document.getElementById('newGameBtn').style.display = 'none';
+            document.getElementById('endResult').style.display = 'none';
+            document.getElementById('waitingMessage').style.display = 'none';
+            document.getElementById('turnIndicator').style.display = 'block';
+            
+            updateTurnIndicator();
+        }
+        
+        // Game loop
+        function gameLoop() {
+            // Update stones
+            stones.forEach(stone => stone.update());
+            
+            // Check collisions
+            checkStoneCollisions();
+            
+            // Draw everything
+            draw();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Initialize game
+        document.getElementById('maxEnds').textContent = maxEnds;
+        updateTurnIndicator();
+        gameLoop();
+    </script>
+</body>
+</html>
